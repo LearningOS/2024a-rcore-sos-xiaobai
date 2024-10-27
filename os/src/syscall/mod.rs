@@ -26,8 +26,12 @@ mod process;
 
 use fs::*;
 use process::*;
+use crate::syscall::TASK_INFO;
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    let current = crate::task::get_current_task_id(); //获取当前任务id
+    crate::syscall::TASK_INFO.update_syscall_times(syscall_id,current); //记录系统调用次数
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
@@ -36,4 +40,10 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_TASK_INFO => sys_task_info(args[0] as *mut TaskInfo),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
+}
+
+
+/// YOUR JOB: Finish sys_write to pass testcases
+pub fn mark_first_task_running(task_id: usize) {
+    TASK_INFO.mark_first_task_running(task_id);
 }

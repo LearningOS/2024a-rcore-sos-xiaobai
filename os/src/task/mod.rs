@@ -20,7 +20,6 @@ use crate::sync::UPSafeCell;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-
 pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
@@ -77,8 +76,9 @@ impl TaskManager {
     /// Generally, the first task in task list is an idle task (we call it zero process later).
     /// But in ch3, we load apps statically, so the first task is a real app.
     fn run_first_task(&self) -> ! {
+        crate::syscall::mark_first_task_running(0);//标记第一个任务被激活的时间
         let mut inner = self.inner.exclusive_access();
-        let task0 = &mut inner.tasks[0];
+        let task0: &mut TaskControlBlock = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
@@ -119,6 +119,7 @@ impl TaskManager {
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
+            crate::syscall::mark_first_task_running(0);//标记下一个任务第一次被激活的时间
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
@@ -135,6 +136,12 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// Suspend the current 'Running' task and run the next task in task list.
+    fn get_current_task_id(&self) -> usize {
+        self.inner.exclusive_access().current_task
+    }
+
 }
 
 /// Run the first task in task list.
@@ -168,4 +175,9 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Get the current task id.
+pub fn get_current_task_id() -> usize {
+    TASK_MANAGER.get_current_task_id()
 }

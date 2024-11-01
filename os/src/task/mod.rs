@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-
+use crate::mm::VirtPageNum;
 pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
@@ -37,15 +37,15 @@ pub struct TaskManager {
     /// total number of tasks
     num_app: usize,
     /// use inner value to get mutable access
-    inner: UPSafeCell<TaskManagerInner>,
+    pub inner: UPSafeCell<TaskManagerInner>,
 }
 
 /// The task manager inner in 'UPSafeCell'
-struct TaskManagerInner {
+pub struct TaskManagerInner {
     /// task list
-    tasks: Vec<TaskControlBlock>,
+    pub tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
-    current_task: usize,
+    pub current_task: usize,
 }
 
 lazy_static! {
@@ -153,6 +153,21 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// 申请
+    pub fn mmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let curr_task_tcb = &mut inner.tasks[current];
+        curr_task_tcb.memory_set.mmap(start_vpn, end_vpn, port)
+    }
+
+    /// 释放
+    pub fn munmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let curr_task_tcb = &mut inner.tasks[current];
+        curr_task_tcb.memory_set.munmap(start_vpn, end_vpn)
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +216,16 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+
+// ch4
+///申请
+pub fn mmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum, port: usize) -> isize {
+    TASK_MANAGER.mmap(start_vpn, end_vpn, port)
+}
+
+///释放
+pub fn munmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+    TASK_MANAGER.munmap(start_vpn, end_vpn)
 }

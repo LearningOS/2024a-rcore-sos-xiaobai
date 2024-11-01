@@ -28,10 +28,21 @@ const SYSCALL_TASK_INFO: usize = 410;
 mod fs;
 mod process;
 
+#[allow(unused)]
+use core::borrow::Borrow;
+
 use fs::*;
 use process::*;
+
+use crate::task::TASK_MANAGER;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    //获得当前任务的task_manager
+    let mut task_manager = TASK_MANAGER.inner.exclusive_access();
+    let current_task = task_manager.current_task;
+    //记录当前任务的系统调用次数
+    task_manager.tasks[current_task].task_syscall_times[syscall_id] += 1;
+    drop(task_manager); //释放task_manager
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),

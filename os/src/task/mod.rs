@@ -27,7 +27,7 @@ use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-
+use crate::mm::VirtPageNum;
 pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
@@ -39,7 +39,8 @@ pub use processor::{
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
     let task = take_current_task().unwrap();
-
+    
+    //println!("suspend_current_and_run_next: pid = {}", task.getpid());
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
@@ -114,4 +115,44 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+/// Get current task through take, leaving a None in its place
+pub fn set_current_task_priority(priority: isize) -> isize {
+    if priority < 2{
+        return -1; 
+    }
+    let task = take_current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.priority = priority as usize;
+    drop(inner);
+    priority
+}
+/// Get current task through take, leaving a None in its place
+pub fn mmap(start: VirtPageNum, end: VirtPageNum,port: usize) -> isize {
+    let task = take_current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    let res = inner.memory_set.mmap(start, end,port);
+    drop(inner);
+    return res;
+}
+
+/// Get current task through take, leaving a None in its place
+pub fn munmap(start: VirtPageNum, end: VirtPageNum) -> isize {
+    let task = take_current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    let res = inner.memory_set.munmap(start, end);
+    drop(inner);
+    return res;
+}
+
+
+/// Add syscall times for self(TCB), if time never init, then init.
+pub fn add_syscall_times(syscall_id: usize) {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if inner.task_start_time == 0 {
+        inner.task_start_time = crate::timer::get_time_ms();
+    }
+    inner.sys_call_times[syscall_id] += 1;
+    drop(inner);
 }

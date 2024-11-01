@@ -1,14 +1,14 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
-
+use crate::syscall::TaskInfo;
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -68,6 +68,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Task priority
+    pub priority: usize,
+
+    /// How many times have this task called sys_calls
+    pub sys_call_times: [u32; MAX_SYSCALL_NUM],
+
+    /// The start time of task
+    pub task_start_time: usize,
+
+    /// Use for stride
+    pub stride: usize,    
 }
 
 impl TaskControlBlockInner {
@@ -84,6 +96,13 @@ impl TaskControlBlockInner {
     }
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
+    }
+    pub fn get_taskinfo(&self) -> TaskInfo {
+        TaskInfo::new(
+            self.get_status(),
+            self.sys_call_times.clone(),
+            (crate::timer::get_time_ms()-self.task_start_time)as usize,
+        )
     }
 }
 
@@ -118,6 +137,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: 16,
+                    sys_call_times: [0; MAX_SYSCALL_NUM],
+                    task_start_time: 0,
+                    stride: 0,
                 })
             },
         };
@@ -191,6 +214,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    priority: 16,
+                    sys_call_times: [0; MAX_SYSCALL_NUM],
+                    task_start_time: 0,
+                    stride: 0,
                 })
             },
         });
@@ -236,6 +263,7 @@ impl TaskControlBlock {
             None
         }
     }
+
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -250,3 +278,4 @@ pub enum TaskStatus {
     /// exited
     Zombie,
 }
+

@@ -94,16 +94,18 @@ impl PageTable {
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
+            //要寻找三级页表，所以i==2时找到了
             if i == 2 {
-                result = Some(pte);
+                result = Some(pte); //返回被option包裹的叶子节点pte
                 break;
             }
+            //如果这个页表没有被映射，就分配一个物理页表空间给他
             if !pte.is_valid() {
                 let frame = frame_alloc().unwrap();
-                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
-                self.frames.push(frame);
+                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V); //标记为有效
+                self.frames.push(frame); //将分配的物理页表加入frames存起来
             }
-            ppn = pte.ppn();
+            ppn = pte.ppn();//ppn指向下一级页表的物理首地址
         }
         result
     }
@@ -118,6 +120,7 @@ impl PageTable {
                 result = Some(pte);
                 break;
             }
+            //如果这个页表没有被映射，就直接返回None
             if !pte.is_valid() {
                 return None;
             }
@@ -156,6 +159,7 @@ impl PageTable {
     }
     /// get the token from the page table
     pub fn token(&self) -> usize {
+        //satp 寄存器高8位设置为8，低44位设置为root_ppn的物理地址 得到该app的satp对应的值
         8usize << 60 | self.root_ppn.0
     }
 }

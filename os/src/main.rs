@@ -97,7 +97,7 @@ fn kernel_log_info() {
 #[no_mangle]
 /// the rust entry-point of os
 pub fn rust_main() -> ! {
-    clear_bss();
+    clear_bss();  
     kernel_log_info();
     mm::init();
     println!("[kernel] back to world!");
@@ -108,3 +108,4 @@ pub fn rust_main() -> ! {
     task::run_first_task();
     panic!("Unreachable in rust_main!");
 }
+

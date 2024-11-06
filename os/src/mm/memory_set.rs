@@ -300,63 +300,86 @@ impl MemorySet {
             false
         }
     }
-    /// 申请
-    pub fn mmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, port: usize) -> isize {
-        let mut flags = PTEFlags::empty();
-        let mut vpn = start_vpn;
 
-        if port & 0b0000_0001 != 0 {
-            flags |= PTEFlags::R;
+    /// mmap in MemorySet
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        // because it maybe support file's mmap, so abstract it as a func
+        let start_va = VirtAddr::from(start);
+
+        if !start_va.aligned() {
+            // not page-aligned
+            return -1;
         }
 
-        if port & 0b0000_0010 != 0 {
-            flags |= PTEFlags::W;
+        if port & !0x7 != 0 {
+            // not good flag
+            return -1;
         }
 
-        if port & 0b0000_0100 != 0 {
-            flags |= PTEFlags::X;
+        if port & 0x7 == 0 {
+            // no meaning
+            return -1;
         }
 
-        flags |= PTEFlags::U;
-        flags |= PTEFlags::V;
+        let mut flag = PTEFlags::empty();
+        if port & 0x01 != 0 {
+            flag |= PTEFlags::R
+        }
+        if port & 0x02 != 0 {
+            flag |= PTEFlags::W
+        }
+        if port & 0x04 != 0 {
+            flag |= PTEFlags::X
+        }
+        flag |= PTEFlags::U;
+        flag |= PTEFlags::V;
 
-        while vpn != end_vpn {
-            if let Some(pte) = self.page_table.translate(vpn) {
-                debug!("find vpn {:?} pte flag = {:?}", vpn, pte.flags());
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start + len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
                 if pte.is_valid() {
-                    debug!("map on already mapped vpn {:?}", vpn);
+                    // page not freed
                     return -1;
                 }
             }
-            if let Some(frame) = frame_alloc() {
-                let ppn = frame.ppn;
-                debug!(" map vpn {:?} and ppn {:?} flag {:?}", vpn, ppn, flags);
-                self.page_table.map(vpn, ppn, flags);
+            if let Some(ppn) = frame_alloc() {
+                self.page_table.map(start_vp, ppn.ppn, flag);
             } else {
                 return -1;
             }
-            vpn.step();
+            start_vp.step();
         }
         0
     }
-    
-    /// 释放
-    pub fn munmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
-        let mut vpn = start_vpn;
-        while vpn != end_vpn {
-            if let Some(pte) = self.page_table.translate(vpn) {
+
+    /// unmmap in MemorySet
+    pub fn unmmap(&mut self, start: usize, len: usize) -> isize {
+        let start_va = VirtAddr::from(start);
+
+        if !start_va.aligned() {
+            // not page-aligned
+            return -1;
+        }
+
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start + len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
                 if !pte.is_valid() {
-                    debug!("unmap on no map vpn");
+                    // page freed
                     return -1;
                 }
             } else {
                 return -1;
             }
-            self.page_table.unmap(vpn);
-            vpn.step();
+            self.page_table.unmap(start_vp);
+            start_vp.step();
         }
         0
-    }    
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {

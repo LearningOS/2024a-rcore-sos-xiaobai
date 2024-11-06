@@ -42,9 +42,6 @@ impl Processor {
 
     ///Get current task in cloning semanteme
     pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
-        if self.current.is_none(){
-            println!("current is none");
-        }
         self.current.as_ref().map(Arc::clone)
     }
 }
@@ -67,7 +64,6 @@ pub fn run_tasks() {
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
-            //println!("next_run_tasks: pid = {}", task.getpid());
             processor.current = Some(task);
             // release processor manually
             drop(processor);

@@ -108,7 +108,7 @@ pub fn frame_alloc() -> Option<FrameTracker> {
     FRAME_ALLOCATOR
         .exclusive_access()
         .alloc()
-        .map(FrameTracker::new)  //返回一个FrameTracker并且使用FrameTracker::new初始化字段全部为0
+        .map(FrameTracker::new)
 }
 
 /// Deallocate a physical page frame with a given ppn

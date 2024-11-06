@@ -63,8 +63,6 @@ pub fn trap_handler() -> ! {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
-            //trace!("syscall from user mode");
-            //println!("[kernel] syscall from user mode_1");
             let mut cx = current_trap_cx();
             cx.sepc += 4;
             // get system call return value

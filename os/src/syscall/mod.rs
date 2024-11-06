@@ -43,21 +43,14 @@ const SYSCALL_TASK_INFO: usize = 410;
 mod fs;
 mod process;
 
-#[allow(unused)]
-use core::borrow::Borrow;
-
+use crate::task::current_task;
 use fs::*;
-use process::*;
 pub use process::TaskInfo;
+use process::*;
 
-
-//use crate::task::TASK_MANAGER;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
-
-    //增加系统调用次数
-    crate::task::add_syscall_times(syscall_id);
-    //println!("syscall id: {}, args: {:?}", syscall_id, args);
+    current_task().unwrap().add_syscall_times(syscall_id);
     match syscall_id {
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),

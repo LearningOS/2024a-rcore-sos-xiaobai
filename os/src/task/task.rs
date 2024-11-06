@@ -1,10 +1,12 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use super::{TaskContext, BIG_STRIDE};
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -71,6 +73,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// How many times have this task called sys_calls
+    pub sys_call_times: [u32; MAX_SYSCALL_NUM],
+
+    /// The start time of task
+    pub task_start_time: Option<usize>,
+
+    /// Use for stride
+    pub stride: usize,
+
+    /// The priority of this task
+    pub priority: usize,
 }
 
 impl TaskControlBlockInner {
@@ -83,6 +97,7 @@ impl TaskControlBlockInner {
     fn get_status(&self) -> TaskStatus {
         self.task_status
     }
+    /// return whether is Zombie
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
@@ -135,6 +150,10 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    sys_call_times: [0; MAX_SYSCALL_NUM],
+                    task_start_time: None,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -216,6 +235,10 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    sys_call_times: [0; MAX_SYSCALL_NUM],
+                    task_start_time: None,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -260,6 +283,57 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+    /// Get task info, can regard as `TaskInfo::<TCB>::from()`
+    /// This time, I think `TaskInfo` can show to TCB, so return a TaskInfo straightly
+    pub fn get_task_info(&self) -> TaskInfo {
+        let inner = self.inner_exclusive_access();
+        TaskInfo::new(
+            inner.get_status(),
+            inner.sys_call_times,
+            Some(get_time_ms() - inner.task_start_time.unwrap_or(get_time_ms())),
+        )
+        // PS: unwrap_or's 'or', maybe never use!
+    }
+
+    /// Add syscall times for self(TCB), if time never init, then init.
+    pub fn add_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner_exclusive_access();
+        if inner.task_start_time == None {
+            inner.task_start_time = Some(get_time_ms());
+        }
+        inner.sys_call_times[syscall_id] += 1;
+    }
+
+    /// Mmap
+    /// if Ok, return 0, else -1, so need isize
+    pub fn mmap(&self, start: usize, len: usize, port: usize) -> isize {
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set.mmap(start, len, port)
+    }
+
+    /// UnMmap
+    /// if Ok, return 0, else -1, so need isize
+    pub fn unmmap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set.unmmap(start, len)
+    }
+
+    /// set priority for self
+    pub fn set_priority(&self, priority: isize) -> isize {
+        if priority < 2 {
+            return -1;
+        }
+        self.inner_exclusive_access().priority = priority as usize;
+        priority
+    }
+
+    /// stride
+    pub fn pass(&self) {
+        let mut inner = self.inner_exclusive_access();
+        let pass = BIG_STRIDE / inner.priority;
+        inner.stride += pass;
     }
 }
 

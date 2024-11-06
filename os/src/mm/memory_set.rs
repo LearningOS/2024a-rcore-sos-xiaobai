@@ -318,6 +318,86 @@ impl MemorySet {
             false
         }
     }
+
+    /// mmap in MemorySet
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        // because it maybe support file's mmap, so abstract it as a func
+        let start_va = VirtAddr::from(start);
+
+        if !start_va.aligned() {
+            // not page-aligned
+            return -1;
+        }
+
+        if port & !0x7 != 0 {
+            // not good flag
+            return -1;
+        }
+
+        if port & 0x7 == 0 {
+            // no meaning
+            return -1;
+        }
+
+        let mut flag = PTEFlags::empty();
+        if port & 0x01 != 0 {
+            flag |= PTEFlags::R
+        }
+        if port & 0x02 != 0 {
+            flag |= PTEFlags::W
+        }
+        if port & 0x04 != 0 {
+            flag |= PTEFlags::X
+        }
+        flag |= PTEFlags::U;
+        flag |= PTEFlags::V;
+
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start + len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
+                if pte.is_valid() {
+                    // page not freed
+                    return -1;
+                }
+            }
+            if let Some(ppn) = frame_alloc() {
+                self.page_table.map(start_vp, ppn.ppn, flag);
+            } else {
+                return -1;
+            }
+            start_vp.step();
+        }
+        0
+    }
+
+    /// unmmap in MemorySet
+    pub fn unmmap(&mut self, start: usize, len: usize) -> isize {
+        let start_va = VirtAddr::from(start);
+
+        if !start_va.aligned() {
+            // not page-aligned
+            return -1;
+        }
+
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start + len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
+                if !pte.is_valid() {
+                    // page freed
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+            self.page_table.unmap(start_vp);
+            start_vp.step();
+        }
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
